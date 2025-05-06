@@ -44,7 +44,7 @@ async function run() {
     // middleware
     const verifyToken = (req, res, next) => {
       if (!req.headers.authorization) {
-        return res.status(401).send({ message: "forbidden access" });
+        return res.status(401).send({ message: "unauthorized access" });
       }
       const token = req.headers.authorization.split(" ")[1];
       jwt.verify(token, process.env.ACCESS_TOKEN, function (err, decoded) {
@@ -64,9 +64,10 @@ async function run() {
       if (!isAdmin) {
         return res.status(403).send({ message: "forbidden access" });
       }
+      next();
     };
 
-    app.post("/users",verifyToken, async (req, res) => {
+    app.post("/users", async (req, res) => {
       const userData = req.body;
       const query = { email: userData?.email };
       const existingUser = await userCollection.findOne(query);
@@ -77,7 +78,7 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/users/admin/:email", async (req, res) => {
+    app.get("/users/admin/:email", verifyToken, async (req, res) => {
       const email = req.params.email;
       if (email !== req.decoded.email) {
         return res.status(401).send({ message: "forbidden access" });
@@ -85,7 +86,6 @@ async function run() {
       const query = { email: email };
       const user = await userCollection.findOne(query);
       let admin = false;
-      console.log(user);
       if (user) {
         admin = user?.role === "admin";
       }
@@ -97,19 +97,24 @@ async function run() {
       res.send(result);
     });
 
-    app.patch("/users/admin/:id",verifyToken,verifyAdmin, async (req, res) => {
-      const id = req.params.id;
-      const filter = { _id: new ObjectId(id) };
-      const updateDoc = {
-        $set: {
-          role: "admin",
-        },
-      };
-      const result = await userCollection.updateOne(filter, updateDoc);
-      res.send(result);
-    });
+    app.patch(
+      "/users/admin/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const filter = { _id: new ObjectId(id) };
+        const updateDoc = {
+          $set: {
+            role: "admin",
+          },
+        };
+        const result = await userCollection.updateOne(filter, updateDoc);
+        res.send(result);
+      }
+    );
 
-    app.delete("/users/:id",verifyToken,verifyAdmin, async (req, res) => {
+    app.delete("/users/:id", verifyToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await userCollection.deleteOne(query);
@@ -133,6 +138,19 @@ async function run() {
       const result = await cartCollection.find(query).toArray();
       res.send(result);
     });
+    // manu api
+    app.post("/menu",verifyToken,verifyAdmin, async (req, res) => {
+      const menuData = req.body;
+      const result = await menuCollection.insertOne(menuData);
+      res.send(result);
+    });
+
+    app.delete("/menu/:id",verifyToken,verifyAdmin, async(req,res)=>{
+      const id = req.params.id;
+      const query = {_id: new ObjectId(id)}
+      const result = await menuCollection.deleteOne(query)
+      res.send(result);
+    })
 
     app.delete("/carts/:id", async (req, res) => {
       const id = req.params.id;
