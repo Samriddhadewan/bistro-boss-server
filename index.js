@@ -1,10 +1,10 @@
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 var jwt = require("jsonwebtoken");
-
+const stripe = require("stripe")(process.env.STRIPE_SECRET);
 const app = express();
 const port = process.env.PORT || 5000;
-require("dotenv").config();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 // middlewares
@@ -31,6 +31,7 @@ async function run() {
     const userCollection = client.db("BisroDB").collection("users");
     const cartCollection = client.db("BisroDB").collection("carts");
     const reviewCollection = client.db("BisroDB").collection("reviews");
+    const paymentCollection = client.db("BisroDB").collection("payments");
 
     // jwt relate api
     app.post("/jwt", async (req, res) => {
@@ -55,6 +56,26 @@ async function run() {
         next();
       });
     };
+
+    app.post("/create-payment-intent", async (req, res) => {
+      try {
+        const { price } = req.body;
+        const amount = parseInt(price * 100);
+        console.log(amount, "amount inside the server");
+
+        const paymentIntent = await stripe.paymentIntents.create({
+          amount: amount,
+          currency: "usd",
+          payment_method_types: ["card"],
+        });
+
+        res.send({
+          clientSecret: paymentIntent.client_secret,
+        });
+      } catch (error) {
+        res.status(500).send({ error: err.message });
+      }
+    });
 
     const verifyAdmin = async (req, res, next) => {
       const email = req.decoded.email;
@@ -139,18 +160,51 @@ async function run() {
       res.send(result);
     });
     // manu api
-    app.post("/menu",verifyToken,verifyAdmin, async (req, res) => {
+    app.post("/menu", verifyToken, verifyAdmin, async (req, res) => {
       const menuData = req.body;
       const result = await menuCollection.insertOne(menuData);
       res.send(result);
     });
-
-    app.delete("/menu/:id",verifyToken,verifyAdmin, async(req,res)=>{
+    // get a data by id
+    app.get("/menu/:id", async (req, res) => {
       const id = req.params.id;
-      const query = {_id: new ObjectId(id)}
-      const result = await menuCollection.deleteOne(query)
+      const query = { _id: new ObjectId(id) };
+      const result = await menuCollection.findOne(query);
+      res.send(result);
+    });
+
+    app.delete("/menu/:id", verifyToken, verifyAdmin, async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await menuCollection.deleteOne(query);
+
+      res.send(result);
+    });
+
+    // payment related api
+    app.post("/payment", async (req, res) => {
+      const payment = req.body;
+      const paymentResult = await paymentCollection.insertOne(payment);
+
+      const query = {
+        _id: {
+          $in: payment.cartIds.map((id) => new ObjectId(id)),
+        },
+      };
+      const deleteResult = await cartCollection.deleteMany(query);
+      res.send({ paymentResult, deleteResult });
+    });
+
+
+    app.get("/payments/:email", async(req,res)=>{
+      const email = req.params.email;
+      const query = {email: email}
+      const result = await paymentCollection.find(query).toArray();
       res.send(result);
     })
+
+
+
 
     app.delete("/carts/:id", async (req, res) => {
       const id = req.params.id;
