@@ -195,22 +195,49 @@ async function run() {
       res.send({ paymentResult, deleteResult });
     });
 
-
-    app.get("/payments/:email", async(req,res)=>{
+    app.get("/payments/:email", verifyToken, async (req, res) => {
       const email = req.params.email;
-      const query = {email: email}
+      const query = { email: email };
       const result = await paymentCollection.find(query).toArray();
       res.send(result);
-    })
-
-
-
+    });
 
     app.delete("/carts/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await cartCollection.deleteOne(query);
       res.send(result);
+    });
+
+    // admin api
+    app.get("/adminDashboard", async (req, res) => {
+      const users = await userCollection.estimatedDocumentCount();
+      const products = await menuCollection.estimatedDocumentCount();
+      const payments = await paymentCollection.estimatedDocumentCount();
+      // const payment = await paymentCollection.find().toArray();
+      // const revenue = await payment.reduce(
+      //   (total, payment) => total + payment.price,
+      //   0
+      // );
+      const result = await paymentCollection.aggregate([
+        {
+          $group: {
+            _id: null,
+            totalRevenue: {$sum: "$price"}
+          }
+        }
+      ]).toArray();
+
+      const revenue = result[0]?.totalRevenue || 0;
+      const revenueFixed = parseFloat(revenue.toFixed(2))
+
+
+      res.send({
+        users,
+        products,
+        payments,
+        revenueFixed
+      });
     });
 
     // Send a ping to confirm a successful connection
